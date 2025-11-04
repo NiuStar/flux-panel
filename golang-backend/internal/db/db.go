@@ -76,6 +76,7 @@ func Init() error {
 		&model.SpeedLimit{},
 		&model.ViteConfig{},
 		&model.StatisticsFlow{},
+		&model.ExitSetting{},
 	); err != nil {
 		return err
 	}

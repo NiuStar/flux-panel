@@ -75,6 +75,8 @@ func RegisterRoutes(r *gin.Engine) {
         node.GET("/connections", controller.NodeConnections)
         // create/update exit node SS service
         node.POST("/set-exit", controller.NodeSetExit)
+        // get last saved exit settings for node
+        node.POST("/get-exit", controller.NodeGetExit)
         // query services on node
         node.POST("/query-services", controller.NodeQueryServices)
     }

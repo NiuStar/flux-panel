@@ -117,3 +117,19 @@ func (StatisticsFlow) TableName() string { return "statistics_flow" }
 
 // Ensure models compile with gorm
 var _ *gorm.DB
+
+// ExitSetting persists the last configured SS exit settings per node
+type ExitSetting struct {
+    BaseEntity
+    NodeID   int64   `gorm:"column:node_id;uniqueIndex" json:"nodeId"`
+    Port     int     `gorm:"column:port" json:"port"`
+    Password string  `gorm:"column:password" json:"password"`
+    Method   string  `gorm:"column:method" json:"method"`
+    Observer *string `gorm:"column:observer" json:"observer,omitempty"`
+    Limiter  *string `gorm:"column:limiter" json:"limiter,omitempty"`
+    RLimiter *string `gorm:"column:rlimiter" json:"rlimiter,omitempty"`
+    // Metadata is a JSON string storing arbitrary key-values for handler.metadata
+    Metadata *string `gorm:"column:metadata" json:"metadata,omitempty"`
+}
+
+func (ExitSetting) TableName() string { return "exit_setting" }

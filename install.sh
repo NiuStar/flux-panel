@@ -1,14 +1,10 @@
 #!/bin/bash
-# 下载地址
-BASE_GOST_URL="https://github.com/bqlpfy/flux-panel/releases/download/gost-latest/gost"
-DOWNLOAD_URL="$BASE_GOST_URL"
 INSTALL_DIR="/etc/gost"
 AGENT_BIN="/usr/local/bin/flux-agent"
 COUNTRY=$(curl -s https://ipinfo.io/country)
-if [ "$COUNTRY" = "CN" ]; then
-    # 拼接 URL（默认国内加速，若提供 -p 则以 -p 优先）
-    DOWNLOAD_URL="https://ghfast.top/${DOWNLOAD_URL}"
-fi
+# GOST 最新版本 API（自动匹配资产）
+BASE_GOST_REPO_API="https://api.github.com/repos/go-gost/gost/releases/latest"
+PROXY_PREFIX=""
 
 
 
@@ -307,6 +303,74 @@ elif [[ "$PROXY_MODE" == "6" ]]; then
   PROXY_PREFIX="http://[240b:4000:93:de01:ffff:c725:3c65:47ff]:5000/"
 fi
 
+# 解析 go-gost/gost 最新版本下载链接（匹配 Linux + 当前架构）
+resolve_latest_gost_url() {
+  local arch="$(uname -m)" token=""
+  case "$arch" in
+    x86_64|amd64) token="amd64" ;;
+    aarch64|arm64) token="arm64" ;;
+    armv7l|armv7|armhf) token="armv7" ;;
+    i386|i686) token="386" ;;
+    mips64el) token="mips64le" ;;
+    mipsel) token="mipsle" ;;
+    mips) token="mips" ;;
+    loongarch64) token="loong64" ;;
+    riscv64) token="riscv64" ;;
+    s390x) token="s390x" ;;
+    *) token="amd64" ;;
+  esac
+  local api="$BASE_GOST_REPO_API"
+  if [[ -n "$PROXY_PREFIX" ]]; then api="${PROXY_PREFIX}${api}"; fi
+  local urls
+  urls=$(curl -fsSL "$api" | jq -r '.assets[].browser_download_url' 2>/dev/null || true)
+  if [[ -z "$urls" ]]; then return 1; fi
+  local cand
+  for cand in $urls; do
+    if [[ "$cand" == *linux* && "$cand" == *$token* && ( "$cand" == *.tar.gz || "$cand" == *.tgz || "$cand" == *.gz || "$cand" == *.zip ) ]]; then
+      if [[ -n "$PROXY_PREFIX" ]]; then echo "${PROXY_PREFIX}${cand}"; else echo "$cand"; fi
+      return 0
+    fi
+  done
+  return 1
+}
+
+# 下载并安装 GOST（支持 tar.gz/zip/gz/单文件）
+download_and_install_gost() {
+  local url="$1"
+  local tmpdir; tmpdir=$(mktemp -d)
+  echo "⬇️ 下载: $url"
+  if ! curl -fSL --retry 3 --retry-delay 1 "$url" -o "$tmpdir/pkg"; then
+    echo "❌ 下载失败: $url"; rm -rf "$tmpdir"; return 1
+  fi
+  mkdir -p "$INSTALL_DIR"
+  if [[ "$url" =~ \.tar\.gz$|\.tgz$ ]]; then
+    tar -xzf "$tmpdir/pkg" -C "$tmpdir"
+    local bin
+    bin=$(find "$tmpdir" -type f -name gost -perm -111 | head -n1 || true)
+    if [[ -z "$bin" ]]; then bin=$(find "$tmpdir" -type f -name gost | head -n1 || true); fi
+    if [[ -z "$bin" ]]; then echo "❌ 未在压缩包内找到 gost"; rm -rf "$tmpdir"; return 1; fi
+    install -m 0755 "$bin" "$INSTALL_DIR/gost"
+  elif [[ "$url" =~ \.zip$ ]]; then
+    if command -v unzip >/dev/null 2>&1; then
+      unzip -o "$tmpdir/pkg" -d "$tmpdir" >/dev/null
+      local bin
+      bin=$(find "$tmpdir" -type f -name gost -perm -111 | head -n1 || true)
+      if [[ -z "$bin" ]]; then bin=$(find "$tmpdir" -type f -name gost | head -n1 || true); fi
+      if [[ -z "$bin" ]]; then echo "❌ 未在压缩包内找到 gost"; rm -rf "$tmpdir"; return 1; fi
+      install -m 0755 "$bin" "$INSTALL_DIR/gost"
+    else
+      echo "⚠️ 未安装 unzip，无法解压 .zip 包"; rm -rf "$tmpdir"; return 1
+    fi
+  elif [[ "$url" =~ \.gz$ ]]; then
+    gunzip -c "$tmpdir/pkg" > "$INSTALL_DIR/gost"
+    chmod +x "$INSTALL_DIR/gost"
+  else
+    install -m 0755 "$tmpdir/pkg" "$INSTALL_DIR/gost"
+  fi
+  rm -rf "$tmpdir"
+  echo "🔎 版本：$($INSTALL_DIR/gost -V || true)"
+}
+
 # 安装功能
 install_gost() {
   echo "🚀 开始安装 GOST..."
@@ -330,23 +394,13 @@ install_gost() {
   # 删除旧文件
   [[ -f "$INSTALL_DIR/gost" ]] && echo "🧹 删除旧文件 gost" && rm -f "$INSTALL_DIR/gost"
 
-  # 下载 gost
-  echo "⬇️ 下载 gost 中..."
-  # 基于代理与地区选择最终下载地址
-  local DL_URL="$BASE_GOST_URL"
-  if [ "$COUNTRY" = "CN" ] && [ -z "$PROXY_PREFIX" ]; then
-    DL_URL="https://ghfast.top/${DL_URL}"
+  # 下载并安装 GOST（自动解析最新版本与资产）
+  echo "⬇️ 解析最新 GOST 下载地址..."
+  local GOST_URL
+  if ! GOST_URL=$(resolve_latest_gost_url); then
+    echo "❌ 无法解析最新 GOST 下载地址"; exit 1
   fi
-  if [[ -n "$PROXY_PREFIX" ]]; then
-    DL_URL="${PROXY_PREFIX}${DL_URL}"
-  fi
-  curl -L "$DL_URL" -o "$INSTALL_DIR/gost"
-  if [[ ! -f "$INSTALL_DIR/gost" || ! -s "$INSTALL_DIR/gost" ]]; then
-    echo "❌ 下载失败，请检查网络或下载链接。"
-    exit 1
-  fi
-  chmod +x "$INSTALL_DIR/gost"
-  echo "✅ 下载完成"
+  download_and_install_gost "$GOST_URL"
 
   # 打印版本
   echo "🔎 gost 版本：$($INSTALL_DIR/gost -V)"
@@ -420,36 +474,27 @@ update_gost() {
     return 1
   fi
   
-  echo "📥 使用下载地址: $DOWNLOAD_URL"
-  
-  # 检查并安装 tcpkill
+  # 检查并安装 tcpkill 与诊断工具（含 jq 用于解析版本）
   check_and_install_tcpkill
-  
-  # 先下载新版本
-  echo "⬇️ 下载最新版本..."
-  curl -L "$DOWNLOAD_URL" -o "$INSTALL_DIR/gost.new"
-  if [[ ! -f "$INSTALL_DIR/gost.new" || ! -s "$INSTALL_DIR/gost.new" ]]; then
-    echo "❌ 下载失败。"
-    return 1
-  fi
+  check_and_install_diag_tools
 
   # 停止服务
   if systemctl list-units --full -all | grep -Fq "gost.service"; then
     echo "🛑 停止 gost 服务..."
-    systemctl stop gost
+    systemctl stop gost || true
   fi
 
-  # 替换文件
-  mv "$INSTALL_DIR/gost.new" "$INSTALL_DIR/gost"
-  chmod +x "$INSTALL_DIR/gost"
-  
-  # 打印版本
-  echo "🔎 新版本：$($INSTALL_DIR/gost -V)"
+  # 下载并安装最新版
+  echo "⬇️ 解析最新 GOST 下载地址..."
+  local GOST_URL
+  if ! GOST_URL=$(resolve_latest_gost_url); then
+    echo "❌ 无法解析最新 GOST 下载地址"; return 1
+  fi
+  download_and_install_gost "$GOST_URL" || return 1
 
-  # 重启服务
+  echo "🔎 新版本：$($INSTALL_DIR/gost -V || true)"
   echo "🔄 重启服务..."
-  systemctl start gost
-  
+  systemctl start gost || true
   echo "✅ 更新完成，服务已重新启动。"
 }
 

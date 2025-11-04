@@ -35,6 +35,8 @@ export const checkNodeStatus = (nodeId?: number) => {
 };
 // 设置出口节点（在节点上创建/更新 SS 服务）
 export const setExitNode = (data: { nodeId: number; port: number; password: string; method?: string; observer?: string; limiter?: string; rlimiter?: string; metadata?: Record<string, any> }) => Network.post("/node/set-exit", data);
+// 获取节点上次保存的出口设置
+export const getExitNode = (nodeId: number) => Network.post("/node/get-exit", { nodeId });
 // 查询节点上的服务
 export const queryNodeServices = (data: { nodeId: number; filter?: string }) => Network.post("/node/query-services", data);
 

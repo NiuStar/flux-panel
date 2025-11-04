@@ -1,6 +1,9 @@
 # 部署指南（Deployment）
 
-本文档描述面板与节点的部署方式、目录结构与常用命令。
+本文档为总览，分别提供服务端部署与节点部署的独立指南：
+
+- 服务端部署（面板）：见 docs/SERVER_DEPLOY.md
+- 节点部署：见 docs/NODE_DEPLOY.md
 
 ---
 ## 1. 环境要求
@@ -33,7 +36,7 @@ curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/pane
 > 强烈建议首次登录后立即修改默认密码！
 
 ---
-## 3. 节点安装 & Agent 启动
+## 3. 节点安装 & Agent 启动（快速指引）
 
 1）在面板“节点”页添加节点（填写 ServerIP、入口端口范围等）。
 

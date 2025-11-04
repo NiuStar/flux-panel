@@ -20,7 +20,8 @@ import {
   updateNode, 
   deleteNode,
   getNodeInstallCommand,
-  setExitNode
+  setExitNode,
+  getExitNode
 } from "@/api";
 
 interface Node {
@@ -130,14 +131,40 @@ export default function NodePage() {
   };
 
   // 打开设置出口服务对话框
-  const openExitModal = (node: Node) => {
+  const openExitModal = async (node: Node) => {
     setExitNodeId(node.id);
-    setExitPort(node.portSta || 10000);
-    setExitPassword("");
-    setExitMethod("AEAD_CHACHA20_POLY1305");
-    setExitObserver("console");
-    setExitLimiter("");
-    setExitRLimiter("");
+    // default values
+    let dPort = node.portSta || 10000;
+    let dPwd = "";
+    let dMethod = "AEAD_CHACHA20_POLY1305";
+    let dObserver = "console";
+    let dLimiter = "";
+    let dRLimiter = "";
+    let dMetaItems: Array<{id:number, key:string, value:string}> = [];
+
+    try {
+      const res = await getExitNode(node.id);
+      if (res.code === 0 && res.data) {
+        const data = res.data as any;
+        if (typeof data.port === 'number') dPort = data.port;
+        if (typeof data.password === 'string') dPwd = data.password;
+        if (typeof data.method === 'string' && data.method) dMethod = data.method;
+        if (typeof data.observer === 'string') dObserver = data.observer || dObserver;
+        if (typeof data.limiter === 'string') dLimiter = data.limiter || '';
+        if (typeof data.rlimiter === 'string') dRLimiter = data.rlimiter || '';
+        if (data.metadata && typeof data.metadata === 'object') {
+          dMetaItems = Object.entries(data.metadata).map(([k,v])=>({id: Date.now()+Math.random(), key: String(k), value: String(v)}));
+        }
+      }
+    } catch {}
+
+    setExitPort(dPort);
+    setExitPassword(dPwd);
+    setExitMethod(dMethod);
+    setExitObserver(dObserver);
+    setExitLimiter(dLimiter);
+    setExitRLimiter(dRLimiter);
+    setExitMetaItems(dMetaItems);
     setExitModalOpen(true);
   };
 

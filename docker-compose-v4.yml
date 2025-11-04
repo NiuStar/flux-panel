@@ -14,9 +14,6 @@ services:
       - "16365:6365"
     volumes:
       - ./backend_logs:/app/logs
-    depends_on:
-      mysql:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "sh", "-c", "wget --no-verbose --tries=1 --spider http://localhost:6365/flow/test || exit 1"]
       interval: 30s
