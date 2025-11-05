@@ -5,6 +5,8 @@ import IndexPage from "@/pages/index";
 import ChangePasswordPage from "@/pages/change-password";
 import DashboardPage from "@/pages/dashboard";
 import ForwardPage from "@/pages/forward";
+import ProbePage from "@/pages/probe";
+import NetworkPage from "@/pages/network";
 import TunnelPage from "@/pages/tunnel";
 import NodePage from "@/pages/node";
 import UserPage from "@/pages/user";
@@ -170,6 +172,30 @@ function App() {
         element={
           <ProtectedRoute>
             <ForwardPage />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/probe" 
+        element={
+          <ProtectedRoute>
+            <ProbePage />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/network/:id" 
+        element={
+          <ProtectedRoute>
+            <NetworkPage />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/network" 
+        element={
+          <ProtectedRoute>
+            <NetworkPage />
           </ProtectedRoute>
         } 
       />

@@ -34,6 +34,16 @@ export default function H5Layout({
       )
     },
     {
+      path: '/probe',
+      label: '探针',
+      icon: (
+        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M2 11a1 1 0 011-1h2.586l2-2H8a1 1 0 110-2h1.586l2-2H14a1 1 0 110 2h-.586l-2 2H12a1 1 0 110 2h-.586l-2 2H11a1 1 0 110 2H7a1 1 0 01-1-1v-.586l-2 2V17a1 1 0 11-2 0v-4z" />
+        </svg>
+      ),
+      adminOnly: true
+    },
+    {
       path: '/forward',
       label: '转发',
       icon: (

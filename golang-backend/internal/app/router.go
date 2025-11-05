@@ -79,6 +79,11 @@ func RegisterRoutes(r *gin.Engine) {
         node.POST("/get-exit", controller.NodeGetExit)
         // query services on node
         node.POST("/query-services", controller.NodeQueryServices)
+        // network stats for node
+        node.POST("/network-stats", controller.NodeNetworkStats)
+        node.POST("/network-stats-batch", controller.NodeNetworkStatsBatch)
+        node.POST("/sysinfo", controller.NodeSysinfo)
+        node.POST("/interfaces", controller.NodeInterfaces)
     }
 
 	// tunnel
@@ -134,10 +139,25 @@ func RegisterRoutes(r *gin.Engine) {
 		openAPI.GET("/sub_store", controller.OpenAPISubStore)
 	}
 
+    // version
+    api.GET("/version", controller.Version)
+
 	// flow
 	r.POST("/flow/config", controller.FlowConfig)
 	r.Any("/flow/test", controller.FlowTest)
 	r.Any("/flow/upload", controller.FlowUpload)
+    // alerts
+    api.POST("/alerts/recent", middleware.RequireRole(), controller.AlertsRecent)
+
+    // probe targets (admin)
+    probe := api.Group("/probe")
+    probe.Use(middleware.RequireRole())
+    {
+        probe.POST("/list", controller.ProbeList)
+        probe.POST("/create", controller.ProbeCreate)
+        probe.POST("/update", controller.ProbeUpdate)
+        probe.POST("/delete", controller.ProbeDelete)
+    }
 
     // serve static frontend under /app to avoid root conflicts
     r.Static("/app", "./public")
@@ -164,5 +184,7 @@ func RegisterRoutes(r *gin.Engine) {
 		agent.POST("/reconcile", controller.AgentReconcile)
 		agent.POST("/remove-services", controller.AgentRemoveServices)
 		agent.POST("/reconcile-node", controller.AgentReconcileNode)
+        agent.POST("/probe-targets", controller.AgentProbeTargets)
+        agent.POST("/report-probe", controller.AgentReportProbe)
 	}
 }

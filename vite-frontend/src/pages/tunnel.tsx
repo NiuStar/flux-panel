@@ -8,6 +8,8 @@ import { Chip } from "@heroui/chip";
 import { Spinner } from "@heroui/spinner";
 import { Divider } from "@heroui/divider";
 import { Alert } from "@heroui/alert";
+// import moved above; avoid duplicate react imports
+import { getNodeInterfaces } from "@/api";
 import toast from 'react-hot-toast';
 
 
@@ -820,15 +822,21 @@ export default function TunnelPage() {
 
                     {/* 隧道转发时显示出口网卡配置 */}
                     {form.type === 2 && (
-                      <Input
-                        label="出口网卡名或IP"
-                        placeholder="请输入出口网卡名或IP"
-                        value={form.interfaceName}
-                        onChange={(e) => setForm(prev => ({ ...prev, interfaceName: e.target.value }))}
-                        isInvalid={!!errors.interfaceName}
-                        errorMessage={errors.interfaceName}
-                        variant="bordered"
-                      />
+                      <div className="space-y-2">
+                        <Input
+                          label="出口网卡名或IP"
+                          placeholder="可从下方列表选择或手动输入"
+                          value={form.interfaceName}
+                          onChange={(e) => setForm(prev => ({ ...prev, interfaceName: e.target.value }))}
+                          isInvalid={!!errors.interfaceName}
+                          errorMessage={errors.interfaceName}
+                          variant="bordered"
+                        />
+                        {/* 出口节点IP选择（agent上报）*/}
+                        {form.outNodeId && (
+                          <IfacePicker nodeId={form.outNodeId} onSelect={(ip)=>setForm(prev=>({...prev, interfaceName: ip}))} />
+                        )}
+                      </div>
                     )}
 
                     {/* 隧道转发时显示出口配置 */}
@@ -885,6 +893,10 @@ export default function TunnelPage() {
                                     }
                                   }
                                 }).catch(()=>{});
+                              });
+                              // 获取该出口节点的接口IP列表（agent上报）
+                              import("@/api").then(({ getNodeInterfaces }) => {
+                                getNodeInterfaces(nid).catch(()=>{});
                               });
                             }
                           }}
@@ -1184,4 +1196,28 @@ export default function TunnelPage() {
       </div>
     
   );
-} 
+}
+
+function IfacePicker({ nodeId, onSelect }: { nodeId: number; onSelect: (ip:string)=>void }) {
+  const [ips, setIps] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    getNodeInterfaces(nodeId).then((res:any)=>{
+      if (!mounted) return;
+      const lis = res.code===0 && Array.isArray(res.data?.ips) ? res.data.ips as string[] : [];
+      setIps(lis);
+    }).catch(()=>{ if (mounted) setIps([]); }).finally(()=>{ if (mounted) setLoading(false); });
+    return ()=>{ mounted=false };
+  }, [nodeId]);
+  if (loading) return <div className="text-xs text-default-500">加载接口IP...</div>;
+  if (!ips.length) return <div className="text-xs text-default-400">未获取到接口IP</div>;
+  return (
+    <div className="flex gap-2 flex-wrap">
+      {ips.map(ip => (
+        <button key={ip} className="px-2 py-1 text-xs rounded bg-default-100 hover:bg-default-200" onClick={()=>onSelect(ip)}>{ip}</button>
+      ))}
+    </div>
+  );
+}

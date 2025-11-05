@@ -73,6 +73,8 @@ export const diagnoseForwardStep = (forwardId: number, step: string) => Network.
 
 // 转发排序操作
 export const updateForwardOrder = (data: { forwards: Array<{ id: number; inx: number }> }) => Network.post("/forward/update-order", data);
+// 最近告警
+export const getRecentAlerts = (limit = 50) => Network.post("/alerts/recent", { limit });
 
 // 限速规则CRUD操作 - 全部使用POST请求
 export const createSpeedLimit = (data: any) => Network.post("/speed-limit/create", data);
@@ -101,3 +103,17 @@ export const verifyCaptcha = (data: { captchaId: string; trackData: string }) =>
 // Agent & Node diagnostics utilities
 export const agentReconcileNode = (nodeId: number) => Network.post("/agent/reconcile-node", { nodeId });
 export const getNodeConnections = () => Network.get("/node/connections");
+
+// 探针目标管理（管理员）
+export const listProbeTargets = () => Network.post("/probe/list");
+export const createProbeTarget = (data: { name: string; ip: string }) => Network.post("/probe/create", data);
+export const updateProbeTarget = (data: { id: number; name?: string; ip?: string; status?: number }) => Network.post("/probe/update", data);
+export const deleteProbeTarget = (id: number) => Network.post("/probe/delete", { id });
+
+// 节点网络统计
+export const getNodeNetworkStats = (nodeId: number, range: string) => Network.post("/node/network-stats", { nodeId, range });
+export const getNodeNetworkStatsBatch = (range: string) => Network.post("/node/network-stats-batch", { range });
+// 版本信息
+export const getVersionInfo = () => Network.get("/version");
+// 节点接口(IP)列表（agent上报）
+export const getNodeInterfaces = (nodeId: number) => Network.post("/node/interfaces", { nodeId });

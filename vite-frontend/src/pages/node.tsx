@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
@@ -9,7 +10,7 @@ import { Spinner } from "@heroui/spinner";
 import { Alert } from "@heroui/alert";
 import { Progress } from "@heroui/progress";
 import { Divider } from "@heroui/divider";
-import { queryNodeServices } from "@/api";
+import { queryNodeServices, getNodeNetworkStatsBatch, getVersionInfo } from "@/api";
 import toast from 'react-hot-toast';
 import axios from 'axios';
 
@@ -34,6 +35,9 @@ interface Node {
   version?: string;
   status: number; // 1: 在线, 0: 离线
   connectionStatus: 'online' | 'offline';
+  priceCents?: number;
+  cycleDays?: number;
+  startDateMs?: number;
   systemInfo?: {
     cpuUsage: number;
     memoryUsage: number;
@@ -58,6 +62,7 @@ interface NodeForm {
 }
 
 export default function NodePage() {
+  const navigate = useNavigate();
   const [nodeList, setNodeList] = useState<Node[]>([]);
   const [loading, setLoading] = useState(false);
   const [dialogVisible, setDialogVisible] = useState(false);
@@ -75,7 +80,11 @@ export default function NodePage() {
     portSta: 1000,
     portEnd: 65535
   });
+  const [priceCents, setPriceCents] = useState<number | undefined>(undefined);
+  const [cycleDays, setCycleDays] = useState<number | undefined>(undefined);
+  const [startDateMs, setStartDateMs] = useState<number | undefined>(undefined);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [probeStat, setProbeStat] = useState<Record<number, {avg:number; latest:number|null; target?: {id:number; name?:string; ip?:string}}>>({});
 
   // 出口服务设置
   const [exitModalOpen, setExitModalOpen] = useState(false);
@@ -88,6 +97,8 @@ export default function NodePage() {
   const [exitLimiter, setExitLimiter] = useState<string>("");
   const [exitRLimiter, setExitRLimiter] = useState<string>("");
   const [exitMetaItems, setExitMetaItems] = useState<Array<{id:number, key:string, value:string}>>([]);
+  const [exitIfaces, setExitIfaces] = useState<string[]>([]);
+  const [exitIfaceSel, setExitIfaceSel] = useState<string>('');
   
   // 安装命令相关状态
   const [installCommandModal, setInstallCommandModal] = useState(false);
@@ -98,6 +109,10 @@ export default function NodePage() {
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
+  const [wsStatus, setWsStatus] = useState<'connected'|'connecting'|'disconnected'>('connecting');
+  const [wsUrlShown, setWsUrlShown] = useState<string>('');
+  const [serverVersion, setServerVersion] = useState<string>('');
+  const [agentVersion, setAgentVersion] = useState<string>('');
 
   useEffect(() => {
     loadNodes();
@@ -106,6 +121,16 @@ export default function NodePage() {
     return () => {
       closeWebSocket();
     };
+  }, []);
+
+  // 加载版本信息
+  useEffect(() => {
+    getVersionInfo().then((res:any)=>{
+      if (res.code===0 && res.data){
+        setServerVersion(res.data.server||'');
+        setAgentVersion(res.data.agent||'');
+      }
+    }).catch(()=>{});
   }, []);
 
   // 加载节点列表
@@ -120,6 +145,18 @@ export default function NodePage() {
           systemInfo: null,
           copyLoading: false
         })));
+        // 批量拉取最近1小时探针概览
+        try {
+          const r = await getNodeNetworkStatsBatch('1h');
+          if (r.code === 0 && r.data) {
+            const mapped: any = {};
+            Object.keys(r.data).forEach((nid) => {
+              const item = r.data[nid];
+              mapped[Number(nid)] = { avg: item.avg ?? 0, latest: item.latest ?? null, target: item.latestTarget };
+            });
+            setProbeStat(mapped);
+          }
+        } catch {}
       } else {
         toast.error(res.msg || '加载节点列表失败');
       }
@@ -158,6 +195,15 @@ export default function NodePage() {
       }
     } catch {}
 
+    // 拉取该节点的接口IP列表（agent上报的全局地址）
+    try {
+      const { getNodeInterfaces } = await import('@/api');
+      const rr: any = await getNodeInterfaces(node.id);
+      const ips = (rr && rr.code === 0 && Array.isArray(rr.data?.ips)) ? rr.data.ips as string[] : [];
+      setExitIfaces(ips);
+    } catch { setExitIfaces([]); }
+    setExitIfaceSel('');
+
     setExitPort(dPort);
     setExitPassword(dPwd);
     setExitMethod(dMethod);
@@ -166,6 +212,20 @@ export default function NodePage() {
     setExitRLimiter(dRLimiter);
     setExitMetaItems(dMetaItems);
     setExitModalOpen(true);
+  };
+
+  const formatRemainDays = (node: Node) => {
+    if (!node.cycleDays || !node.startDateMs) return '';
+    const now = Date.now();
+    const cycleMs = node.cycleDays * 24 * 3600 * 1000;
+    const elapsed = Math.max(0, now - node.startDateMs);
+    const remain = cycleMs - (elapsed % cycleMs);
+    const days = Math.ceil(remain / (24*3600*1000));
+    return `${days} 天`;
+  };
+
+  const goNetwork = (node: Node) => {
+    navigate(`/network/${node.id}`);
   };
 
   // 刷新节点服务状态（仅查询 ss）
@@ -195,6 +255,7 @@ export default function NodePage() {
     try {
       const metadata: any = {};
       exitMetaItems.forEach((it: {key:string; value:string}) => { if (it.key && it.value) metadata[it.key] = it.value });
+      if (exitIfaceSel) { (metadata as any)['interface'] = exitIfaceSel }
       const res = await setExitNode({ nodeId: exitNodeId, port: exitPort, password: exitPassword, method: exitMethod, 
         observer: exitObserver, limiter: exitLimiter, rlimiter: exitRLimiter, metadata } as any);
       if (res.code === 0) { toast.success('出口服务已创建/更新'); setExitModalOpen(false); }
@@ -208,6 +269,7 @@ export default function NodePage() {
 
   // 初始化WebSocket连接
   const initWebSocket = () => {
+    setWsStatus('connecting');
     if (websocketRef.current && 
         (websocketRef.current.readyState === WebSocket.OPEN || 
          websocketRef.current.readyState === WebSocket.CONNECTING)) {
@@ -221,12 +283,14 @@ export default function NodePage() {
     // 构建WebSocket URL，使用axios的baseURL
     const baseUrl = axios.defaults.baseURL || (import.meta.env.VITE_API_BASE ? `${import.meta.env.VITE_API_BASE}/api/v1/` : '/api/v1/');
     const wsUrl = baseUrl.replace(/^http/, 'ws').replace(/\/api\/v1\/$/, '') + `/system-info?type=0&secret=${localStorage.getItem('token')}`;
+    setWsUrlShown(wsUrl);
     
     try {
       websocketRef.current = new WebSocket(wsUrl);
       
       websocketRef.current.onopen = () => {
         reconnectAttemptsRef.current = 0;
+        setWsStatus('connected');
       };
       
       websocketRef.current.onmessage = (event) => {
@@ -240,13 +304,16 @@ export default function NodePage() {
       
       websocketRef.current.onerror = () => {
         // WebSocket错误时不输出错误信息
+        setWsStatus('disconnected');
       };
       
       websocketRef.current.onclose = () => {
         websocketRef.current = null;
+        setWsStatus('disconnected');
         attemptReconnect();
       };
     } catch (error) {
+      setWsStatus('disconnected');
       attemptReconnect();
     }
   };
@@ -335,6 +402,7 @@ export default function NodePage() {
       reconnectAttemptsRef.current++;
       
       reconnectTimerRef.current = setTimeout(() => {
+        setWsStatus('connecting');
         initWebSocket();
       }, 3000 * reconnectAttemptsRef.current);
     }
@@ -512,6 +580,9 @@ export default function NodePage() {
       portSta: node.portSta,
       portEnd: node.portEnd
     });
+    setPriceCents(node.priceCents);
+    setCycleDays(node.cycleDays);
+    setStartDateMs(node.startDateMs);
     setDialogVisible(true);
   };
 
@@ -596,20 +667,28 @@ export default function NodePage() {
         .filter(ip => ip)
         .join(',');
         
-      const submitData = {
+      const submitData: any = {
         ...form,
         ip: ipString
       };
       delete (submitData as any).ipString;
+      if (priceCents != null) submitData.priceCents = priceCents;
+      if (cycleDays != null) submitData.cycleDays = cycleDays;
+      if (startDateMs != null) submitData.startDateMs = startDateMs;
       
       const apiCall = isEdit ? updateNode : createNode;
-      const data = isEdit ? submitData : { 
+      const data: any = isEdit ? submitData : { 
         name: form.name, 
         ip: ipString,
         serverIp: form.serverIp,
         portSta: form.portSta,
         portEnd: form.portEnd
       };
+      if (!isEdit) {
+        if (priceCents != null) data.priceCents = priceCents;
+        if (cycleDays != null) data.cycleDays = cycleDays;
+        if (startDateMs != null) data.startDateMs = startDateMs;
+      }
       
       const res = await apiCall(data);
       if (res.code === 0) {
@@ -658,7 +737,15 @@ export default function NodePage() {
       <div className="px-3 lg:px-6 py-8">
         {/* 页面头部 */}
         <div className="flex items-center justify-between mb-6">
-        <div className="flex-1">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 text-sm">
+            <span className={`inline-block w-2 h-2 rounded-full ${wsStatus==='connected' ? 'bg-green-500' : (wsStatus==='connecting' ? 'bg-yellow-500' : 'bg-red-500')}`}></span>
+            <span className="text-default-600">
+              {wsStatus==='connected' ? 'WS 已连接' : wsStatus==='connecting' ? 'WS 连接中…' : 'WS 未连接（自动重试）'}
+            </span>
+          </div>
+          <div className="hidden md:block text-xs text-default-500 truncate max-w-[420px]" title={wsUrlShown}>WS: {wsUrlShown || '-'}</div>
+          <div className="text-xs text-default-500">后端: {serverVersion||'-'} · Agent: {agentVersion||'-'}</div>
         </div>
 
         <Button
@@ -746,6 +833,24 @@ export default function NodePage() {
                       <span className="text-default-600">端口</span>
                       <span className="text-xs">{node.portSta}-{node.portEnd}</span>
                     </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-default-600">网络</span>
+                      <span className="text-xs">
+                        {probeStat[node.id]?.latest!=null ? `${probeStat[node.id]?.latest} ms` : '-'}
+                        {probeStat[node.id]?.avg? ` · 平均 ${probeStat[node.id]?.avg} ms` : ''}
+                        {probeStat[node.id]?.target?.name ? ` · ${probeStat[node.id]?.target?.name}(${probeStat[node.id]?.target?.ip || ''})` : ''}
+                      </span>
+                    </div>
+                    {(node.priceCents || node.cycleDays) && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-default-600">计费</span>
+                        <span className="text-xs">
+                          {node.priceCents ? `¥${(node.priceCents/100).toFixed(2)}` : ''}
+                          {node.cycleDays ? ` / ${node.cycleDays}天` : ''}
+                          {node.startDateMs ? ` · 剩余${formatRemainDays(node)}` : ''}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-sm">
                       <span className="text-default-600">版本</span>
                       <span className="text-xs">{node.version || '未知'}</span>
@@ -885,6 +990,15 @@ export default function NodePage() {
                         size="sm"
                         variant="flat"
                         color="secondary"
+                        onPress={() => goNetwork(node)}
+                        className="flex-1 min-h-8"
+                      >
+                        网络
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        color="secondary"
                         onPress={() => refreshServices(node)}
                         isLoading={node.ssLoading}
                         className="flex-1 min-h-8"
@@ -991,6 +1105,18 @@ export default function NodePage() {
                   />
                 </div>
 
+                <div className="grid grid-cols-3 gap-4">
+                  <Input label="价格(元)" type="number" placeholder="可选" value={priceCents!=null? (priceCents/100).toString():''} onChange={(e)=>{
+                    const v = parseFloat((e.target as any).value); setPriceCents(isNaN(v)? undefined : Math.round(v*100));
+                  }} variant="bordered" />
+                  <Input label="周期(天)" type="number" placeholder="可选" value={cycleDays!=null? String(cycleDays):''} onChange={(e)=>{
+                    const v = parseInt((e.target as any).value); setCycleDays(isNaN(v)? undefined : v);
+                  }} variant="bordered" />
+                  <Input label="开始日期" type="date" value={startDateMs? new Date(startDateMs).toISOString().slice(0,10):''} onChange={(e)=>{
+                    const s = (e.target as any).value; setStartDateMs(s? new Date(s+ 'T00:00:00').getTime(): undefined);
+                  }} variant="bordered" />
+                </div>
+
 
 
                 
@@ -1031,6 +1157,16 @@ export default function NodePage() {
                     <Input label="端口" type="number" value={String(exitPort)} onChange={(e:any)=>setExitPort(Number(e.target.value))} />
                     <Input label="密码" type="text" value={exitPassword} onChange={(e:any)=>setExitPassword(e.target.value)} />
                     <Input label="加密方法" value={exitMethod} onChange={(e:any)=>setExitMethod(e.target.value)} description="默认 AEAD_CHACHA20_POLY1305" />
+                    <div>
+                      <div className="text-sm text-default-600 mb-1">出口IP（metadata.interface，可选）</div>
+                      <div className="flex gap-2 flex-wrap">
+                        {exitIfaces.map((ip) => (
+                          <Button key={ip} size="sm" variant={exitIfaceSel===ip? 'solid':'flat'} color={exitIfaceSel===ip? 'primary':'default'} onPress={()=>setExitIfaceSel(ip)}>{ip}</Button>
+                        ))}
+                        {exitIfaces.length===0 && <div className="text-xs text-default-500">未获取到出口IP列表</div>}
+                        {exitIfaceSel && <Button size="sm" variant="light" onPress={()=>setExitIfaceSel('')}>清除选择</Button>}
+                      </div>
+                    </div>
                     <Divider />
                     <Input label="观察器(observer)" value={exitObserver} onChange={(e:any)=>setExitObserver(e.target.value)} description="默认 console，可留空" />
                     <Input label="限速(limiter)" value={exitLimiter} onChange={(e:any)=>setExitLimiter(e.target.value)} description="可选，需在节点注册对应限速器" />

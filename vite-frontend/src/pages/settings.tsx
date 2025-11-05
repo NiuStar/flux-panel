@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Input } from "@heroui/input";
 import { Button } from "@heroui/button";
 import { Card, CardBody } from "@heroui/card";
+import { getVersionInfo } from "@/api";
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { reinitializeBaseURL } from '@/api/network';
@@ -25,6 +26,9 @@ export const SettingsPage = () => {
   const [panelAddresses, setPanelAddresses] = useState<PanelAddress[]>([]);
   const [newName, setNewName] = useState('');
   const [newAddress, setNewAddress] = useState('');
+  const [serverVersion, setServerVersion] = useState<string>("-");
+  const [agentVersion, setAgentVersion] = useState<string>("-");
+  const frontendVersion = (import.meta as any).env?.VITE_APP_VERSION || "";
 
 
   const setPanelAddressesFunc = (newAddress: PanelAddress[]) => {
@@ -74,6 +78,12 @@ export const SettingsPage = () => {
   // 页面加载时获取数据
   useEffect(() => {
     loadPanelAddresses();
+    getVersionInfo().then((res:any)=>{
+      if (res.code===0 && res.data){
+        setServerVersion(res.data.server||"-");
+        setAgentVersion(res.data.agent||"-");
+      }
+    }).catch(()=>{});
   }, []);
 
   return (
@@ -173,6 +183,27 @@ export const SettingsPage = () => {
                   ))}
                 </div>
               )}
+            </CardBody>
+          </Card>
+
+          {/* 版本信息 */}
+          <Card className="border border-gray-200 dark:border-gray-700">
+            <CardBody className="p-6">
+              <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">版本信息</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                <div className="p-3 rounded border border-default-200 dark:border-default-100">
+                  <div className="text-default-500">前端</div>
+                  <div className="font-semibold">{frontendVersion}</div>
+                </div>
+                <div className="p-3 rounded border border-default-200 dark:border-default-100">
+                  <div className="text-default-500">服务器</div>
+                  <div className="font-semibold">{serverVersion}</div>
+                </div>
+                <div className="p-3 rounded border border-default-200 dark:border-default-100">
+                  <div className="text-default-500">Agent（预期版本）</div>
+                  <div className="font-semibold">{agentVersion}</div>
+                </div>
+              </div>
             </CardBody>
           </Card>
         </div>

@@ -461,8 +461,10 @@ EOF
     echo "journalctl -u gost -f"
   fi
 
-  # 安装并启用 Bash 诊断 Agent
+  # 安装并启用 Go 诊断 Agent，并确保服务已重启生效
   install_flux_agent
+  systemctl daemon-reload
+  systemctl restart flux-agent >/dev/null 2>&1 || systemctl start flux-agent >/dev/null 2>&1 || true
 }
 
 # 更新功能
@@ -495,7 +497,10 @@ update_gost() {
   echo "🔎 新版本：$($INSTALL_DIR/gost -V || true)"
   echo "🔄 重启服务..."
   systemctl start gost || true
-  echo "✅ 更新完成，服务已重新启动。"
+  # 同步重启 flux-agent，避免手动操作
+  systemctl daemon-reload
+  systemctl restart flux-agent >/dev/null 2>&1 || systemctl start flux-agent >/dev/null 2>&1 || true
+  echo "✅ 更新完成，gost 与 flux-agent 均已重新启动。"
 }
 
 # 卸载功能

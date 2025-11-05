@@ -77,6 +77,12 @@ func Init() error {
 		&model.ViteConfig{},
 		&model.StatisticsFlow{},
 		&model.ExitSetting{},
+		&model.ProbeTarget{},
+		&model.NodeProbeResult{},
+		&model.NodeDisconnectLog{},
+		&model.Alert{},
+		&model.NodeSysInfo{},
+		&model.NodeRuntime{},
 	); err != nil {
 		return err
 	}

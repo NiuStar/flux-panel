@@ -33,7 +33,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 
-import { 
+import {
   createForward, 
   getForwardList, 
   updateForward, 
@@ -43,7 +43,9 @@ import {
   pauseForwardService,
   resumeForwardService,
   diagnoseForwardStep,
-  updateForwardOrder
+  updateForwardOrder,
+  getNodeInterfaces,
+  getTunnelById,
 } from "@/api";
 import { JwtUtil } from "@/utils/jwt";
 
@@ -212,6 +214,38 @@ export default function ForwardPage() {
   useEffect(() => {
     loadData();
   }, []);
+  
+  function ForwardIfacePicker({ selectedTunnel, onSelect }: { selectedTunnel: Tunnel | null; onSelect:(ip:string)=>void }){
+    const [ips, setIps] = useState<string[]>([]);
+    const [loading, setLoading] = useState(false);
+    useEffect(()=>{
+      const load = async ()=>{
+        setIps([]); setLoading(true);
+        try {
+          const t = selectedTunnel;
+          if (!t) { setLoading(false); return; }
+          // 拉取隧道详情，判断类型与节点
+          const dt:any = await getTunnelById(t.id);
+          if (dt.code !== 0 || !dt.data) { setLoading(false); return; }
+          const type = dt.data.type;
+          const nodeId = (type === 2 && dt.data.outNodeId) ? dt.data.outNodeId : dt.data.inNodeId;
+          if (!nodeId) { setLoading(false); return; }
+          const res:any = await getNodeInterfaces(Number(nodeId));
+          if (res.code===0 && Array.isArray(res.data?.ips)) setIps(res.data.ips as string[]);
+        } catch { /* noop */ } finally { setLoading(false); }
+      };
+      load();
+    }, [selectedTunnel?.id]);
+    if (loading) return <div className="text-xs text-default-500">加载接口IP...</div>;
+    if (!ips.length) return <div className="text-xs text-default-400">未获取到接口IP</div>;
+    return (
+      <div className="flex gap-2 flex-wrap">
+        {ips.map(ip => (
+          <button key={ip} className="px-2 py-1 text-xs rounded bg-default-100 hover:bg-default-200" onClick={()=>onSelect(ip)}>{ip}</button>
+        ))}
+      </div>
+    );
+  }
 
   // 切换显示模式并保存到localStorage
   const handleViewModeChange = () => {
@@ -848,9 +882,10 @@ export default function ForwardPage() {
         return;
       }
       
-      // 格式化导出数据：remoteAddr|name|inPort
+      // 格式化导出数据：remoteAddr|name|inPort|interface（interface 可为空）
       const exportLines = forwardsToExport.map(forward => {
-        return `${forward.remoteAddr}|${forward.name}|${forward.inPort}`;
+        const iface = forward.interfaceName || '';
+        return `${forward.remoteAddr}|${forward.name}|${forward.inPort||''}|${iface}`;
       });
       
       const exportText = exportLines.join('\n');
@@ -907,7 +942,7 @@ export default function ForwardPage() {
           continue;
         }
 
-        const [remoteAddr, name, inPort] = parts;
+        const [remoteAddr, name, inPort, iface] = parts;
         
         if (!remoteAddr.trim() || !name.trim()) {
           setImportResults(prev => [{
@@ -954,7 +989,8 @@ export default function ForwardPage() {
             tunnelId: selectedTunnelForImport, // 使用用户选择的隧道
             inPort: portNumber, // 使用指定端口或自动分配
             remoteAddr: remoteAddr.trim(),
-            strategy: 'fifo'
+            strategy: 'fifo',
+            interfaceName: (iface && iface.trim()) ? iface.trim() : undefined
           });
 
           if (response.code === 0) {
@@ -1632,7 +1668,7 @@ export default function ForwardPage() {
                     
                     <Input
                       label="出口网卡名或IP"
-                      placeholder="请输入出口网卡名或IP"
+                      placeholder="可从下方列表选择或手动输入"
                       value={form.interfaceName}
                       onChange={(e) => setForm(prev => ({ ...prev, interfaceName: e.target.value }))}
                       isInvalid={!!errors.interfaceName}
@@ -1640,6 +1676,7 @@ export default function ForwardPage() {
                       variant="bordered"
                       description="用于多IP服务器指定使用那个IP请求远程地址，不懂的默认为空就行"
                     />
+                    <ForwardIfacePicker selectedTunnel={selectedTunnel} onSelect={(ip)=>setForm(prev=>({...prev, interfaceName: ip}))} />
                     
                     {getAddressCount(form.remoteAddr) > 1 && (
                       <Select
@@ -1948,11 +1985,11 @@ export default function ForwardPage() {
 
                 {/* 输入区域 */}
                 <div>
-                  <Textarea
-                    label="导入数据"
-                    placeholder="请输入要导入的转发数据，格式：目标地址|转发名称|入口端口"
-                    value={importData}
-                    onChange={(e) => setImportData(e.target.value)}
+                    <Textarea
+                      label="导入数据"
+                      placeholder="请输入要导入的转发数据，格式：目标地址|转发名称|入口端口|出口IP(可选)"
+                      value={importData}
+                      onChange={(e) => setImportData(e.target.value)}
                     variant="flat"
                     minRows={8}
                     maxRows={12}
@@ -2214,4 +2251,4 @@ export default function ForwardPage() {
       </div>
     
   );
-} 
+}

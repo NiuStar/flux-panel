@@ -33,6 +33,10 @@ type Node struct {
     Version  string `gorm:"column:version" json:"version"`
     PortSta  int    `gorm:"column:port_sta" json:"portSta"`
     PortEnd  int    `gorm:"column:port_end" json:"portEnd"`
+    // Billing fields
+    PriceCents  *int64 `gorm:"column:price_cents" json:"priceCents,omitempty"`
+    CycleDays   *int   `gorm:"column:cycle_days" json:"cycleDays,omitempty"`
+    StartDateMs *int64 `gorm:"column:start_date_ms" json:"startDateMs,omitempty"`
 }
 func (Node) TableName() string { return "node" }
 
@@ -133,3 +137,56 @@ type ExitSetting struct {
 }
 
 func (ExitSetting) TableName() string { return "exit_setting" }
+
+// ProbeTarget: global list of IPs to ping
+type ProbeTarget struct {
+    ID          int64  `gorm:"primaryKey;column:id" json:"id"`
+    CreatedTime int64  `gorm:"column:created_time" json:"createdTime"`
+    UpdatedTime int64  `gorm:"column:updated_time" json:"updatedTime"`
+    Status      int    `gorm:"column:status" json:"status"`
+    Name        string `gorm:"column:name" json:"name"`
+    IP          string `gorm:"column:ip" json:"ip"`
+}
+func (ProbeTarget) TableName() string { return "probe_target" }
+
+// NodeProbeResult: time series of ping results per node per target
+type NodeProbeResult struct {
+    ID       int64 `gorm:"primaryKey;column:id" json:"id"`
+    NodeID   int64 `gorm:"column:node_id" json:"nodeId"`
+    TargetID int64 `gorm:"column:target_id" json:"targetId"`
+    RTTMs    int   `gorm:"column:rtt_ms" json:"rttMs"`
+    OK       int   `gorm:"column:ok" json:"ok"` // 1 ok, 0 fail
+    TimeMs   int64 `gorm:"column:time_ms" json:"timeMs"`
+}
+func (NodeProbeResult) TableName() string { return "node_probe_result" }
+
+// NodeDisconnectLog: records node offline/online durations
+type NodeDisconnectLog struct {
+    ID        int64  `gorm:"primaryKey;column:id" json:"id"`
+    NodeID    int64  `gorm:"column:node_id" json:"nodeId"`
+    DownAtMs  int64  `gorm:"column:down_at_ms" json:"downAtMs"`
+    UpAtMs    *int64 `gorm:"column:up_at_ms" json:"upAtMs,omitempty"`
+    DurationS *int64 `gorm:"column:duration_s" json:"durationS,omitempty"`
+}
+func (NodeDisconnectLog) TableName() string { return "node_disconnect_log" }
+
+// NodeSysInfo stores periodic system info reported by agent for timeseries
+type NodeSysInfo struct {
+    ID        int64   `gorm:"primaryKey;column:id" json:"id"`
+    NodeID    int64   `gorm:"column:node_id" json:"nodeId"`
+    TimeMs    int64   `gorm:"column:time_ms" json:"timeMs"`
+    Uptime    int64   `gorm:"column:uptime" json:"uptime"`
+    BytesRx   int64   `gorm:"column:bytes_rx" json:"bytesRx"`
+    BytesTx   int64   `gorm:"column:bytes_tx" json:"bytesTx"`
+    CPU       float64 `gorm:"column:cpu" json:"cpu"`
+    Mem       float64 `gorm:"column:mem" json:"mem"`
+}
+func (NodeSysInfo) TableName() string { return "node_sysinfo" }
+
+// NodeRuntime stores latest runtime metadata like interfaces list
+type NodeRuntime struct {
+    NodeID      int64   `gorm:"primaryKey;column:node_id" json:"nodeId"`
+    Interfaces  *string `gorm:"column:interfaces" json:"interfaces,omitempty"` // JSON array string
+    UpdatedTime int64   `gorm:"column:updated_time" json:"updatedTime"`
+}
+func (NodeRuntime) TableName() string { return "node_runtime" }

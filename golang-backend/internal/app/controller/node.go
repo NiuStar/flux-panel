@@ -24,7 +24,10 @@ func NodeCreate(c *gin.Context) {
 	}
 	now := time.Now().UnixMilli()
 	status := 0
-	n := model.Node{BaseEntity: model.BaseEntity{CreatedTime: now, UpdatedTime: now, Status: &status}, Name: req.Name, IP: req.IP, ServerIP: req.ServerIP, PortSta: req.PortSta, PortEnd: req.PortEnd}
+    n := model.Node{BaseEntity: model.BaseEntity{CreatedTime: now, UpdatedTime: now, Status: &status}, Name: req.Name, IP: req.IP, ServerIP: req.ServerIP, PortSta: req.PortSta, PortEnd: req.PortEnd}
+    n.PriceCents = req.PriceCents
+    n.CycleDays = req.CycleDays
+    n.StartDateMs = req.StartDateMs
 	// simple secret
 	n.Secret = RandUUID()
 	if err := dbpkg.DB.Create(&n).Error; err != nil {
@@ -60,7 +63,10 @@ func NodeUpdate(c *gin.Context) {
 		c.JSON(http.StatusOK, response.ErrMsg("端口范围无效"))
 		return
 	}
-	n.Name, n.IP, n.ServerIP, n.PortSta, n.PortEnd = req.Name, req.IP, req.ServerIP, req.PortSta, req.PortEnd
+    n.Name, n.IP, n.ServerIP, n.PortSta, n.PortEnd = req.Name, req.IP, req.ServerIP, req.PortSta, req.PortEnd
+    if req.PriceCents != nil { n.PriceCents = req.PriceCents }
+    if req.CycleDays != nil { n.CycleDays = req.CycleDays }
+    if req.StartDateMs != nil { n.StartDateMs = req.StartDateMs }
 	n.UpdatedTime = time.Now().UnixMilli()
 	if err := dbpkg.DB.Save(&n).Error; err != nil {
 		c.JSON(http.StatusOK, response.ErrMsg("节点更新失败"))

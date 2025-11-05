@@ -1,12 +1,19 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+// inject app version from package.json
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import pkg from './package.json';
 
 export default defineConfig({
   plugins: [
     react(),
   ],
   base: '/app/',
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version || ''),
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

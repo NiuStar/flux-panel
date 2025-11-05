@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"io"
 	"log"
 	"math/rand"
 	"net"
@@ -110,7 +112,7 @@ func main() {
 		log.Fatalf("missing ADDR/SECRET (env or flags) and /etc/gost/config.json fallback")
 	}
 
-	version := "go-agent-1.0.1"
+    version := "go-agent-1.0.4"
 	u := url.URL{Scheme: scheme, Host: addr, Path: "/system-info"}
 	q := u.Query()
 	q.Set("type", "1")
@@ -142,6 +144,8 @@ func runOnce(wsURL, addr, secret, scheme string) error {
 	// on connect reconcile & periodic reconcile
 	go reconcile(addr, secret, scheme)
 	go periodicReconcile(addr, secret, scheme)
+	go periodicProbe(addr, secret, scheme)
+    go periodicSystemInfo(c)
 
 	// read loop
 	c.SetReadLimit(1 << 20)
@@ -301,6 +305,122 @@ func runOnce(wsURL, addr, secret, scheme string) error {
             // ignore unknown
         }
     }
+}
+
+// ---- Periodic system info reporting over WS ----
+
+type cpuTimes struct{ idle, total uint64 }
+
+var lastCPU *cpuTimes
+
+func readCPUTimes() (*cpuTimes, error) {
+    b, err := ioutil.ReadFile("/proc/stat")
+    if err != nil { return nil, err }
+    // first line: cpu  user nice system idle iowait irq softirq steal guest guest_nice
+    // we sum all except the first token label
+    line := strings.SplitN(string(b), "\n", 2)[0]
+    fields := strings.Fields(line)
+    if len(fields) < 5 { return nil, fmt.Errorf("bad /proc/stat") }
+    var total uint64
+    for i:=1; i<len(fields); i++ { v, _ := strconv.ParseUint(fields[i], 10, 64); total += v }
+    idle, _ := strconv.ParseUint(fields[4], 10, 64)
+    return &cpuTimes{idle: idle, total: total}, nil
+}
+
+func cpuUsagePercent() float64 {
+    cur, err := readCPUTimes(); if err != nil { return 0 }
+    if lastCPU == nil { lastCPU = cur; return 0 }
+    idle := float64(cur.idle - lastCPU.idle)
+    total := float64(cur.total - lastCPU.total)
+    lastCPU = cur
+    if total <= 0 { return 0 }
+    used := (1.0 - idle/total) * 100.0
+    if used < 0 { used = 0 }
+    if used > 100 { used = 100 }
+    return used
+}
+
+func memUsagePercent() float64 {
+    b, err := ioutil.ReadFile("/proc/meminfo"); if err != nil { return 0 }
+    lines := strings.Split(string(b), "\n")
+    var total, avail float64
+    for _, ln := range lines {
+        if strings.HasPrefix(ln, "MemTotal:") {
+            parts := strings.Fields(ln); if len(parts) >= 2 { v,_ := strconv.ParseFloat(parts[1],64); total = v }
+        } else if strings.HasPrefix(ln, "MemAvailable:") {
+            parts := strings.Fields(ln); if len(parts) >= 2 { v,_ := strconv.ParseFloat(parts[1],64); avail = v }
+        }
+    }
+    if total <= 0 { return 0 }
+    used := (total - avail) / total * 100.0
+    if used < 0 { used = 0 }
+    if used > 100 { used = 100 }
+    return used
+}
+
+func netBytes() (rx, tx uint64) {
+    b, err := ioutil.ReadFile("/proc/net/dev"); if err != nil { return 0,0 }
+    lines := strings.Split(string(b), "\n")
+    for _, ln := range lines[2:] { // skip headers
+        parts := strings.Fields(strings.TrimSpace(ln))
+        if len(parts) < 17 { continue }
+        // parts[0]=iface: ; rx bytes=parts[1]; tx bytes=parts[9]
+        // strip trailing ':' in iface
+        // sum over all interfaces
+        rxb, _ := strconv.ParseUint(parts[1], 10, 64)
+        txb, _ := strconv.ParseUint(parts[9], 10, 64)
+        rx += rxb; tx += txb
+    }
+    return
+}
+
+func uptimeSeconds() int64 {
+    b, err := ioutil.ReadFile("/proc/uptime"); if err != nil { return 0 }
+    parts := strings.Fields(string(b))
+    if len(parts) == 0 { return 0 }
+    f, _ := strconv.ParseFloat(parts[0], 64)
+    return int64(f)
+}
+
+func periodicSystemInfo(c *websocket.Conn) {
+    ticker := time.NewTicker(5 * time.Second)
+    defer ticker.Stop()
+    for {
+        rx, tx := netBytes()
+        // gather interface list (best-effort)
+        ifaces := getInterfaces()
+        payload := map[string]any{
+            "Uptime": uptimeSeconds(),
+        }
+        payload["BytesReceived"] = int64(rx)
+        payload["BytesTransmitted"] = int64(tx)
+        payload["CPUUsage"] = cpuUsagePercent()
+        payload["MemoryUsage"] = memUsagePercent()
+        if len(ifaces) > 0 { payload["Interfaces"] = ifaces }
+        b, _ := json.Marshal(payload)
+        log.Printf("{\"event\":\"sysinfo_report\",\"payload\":%s}", string(b))
+        if err := c.WriteMessage(websocket.TextMessage, b); err != nil {
+            return
+        }
+        <-ticker.C
+    }
+}
+
+func getInterfaces() []string {
+    // try `ip -o -4 addr show up scope global`
+    var out []byte
+    if b, err := exec.Command("sh", "-c", "ip -o -4 addr show up scope global | awk '{print $4}' | cut -d/ -f1").Output(); err == nil {
+        out = append(out, b...)
+    }
+    if b, err := exec.Command("sh", "-c", "ip -o -6 addr show up scope global | awk '{print $4}' | cut -d/ -f1").Output(); err == nil {
+        if len(out) > 0 && len(b) > 0 { out = append(out, '\n') }
+        out = append(out, b...)
+    }
+    if len(out) == 0 { return nil }
+    lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+    ips := []string{}
+    for _, ln := range lines { s := strings.TrimSpace(ln); if s != "" { ips = append(ips, s) } }
+    return ips
 }
 
 func periodicReconcile(addr, secret, scheme string) {
@@ -847,4 +967,60 @@ func runIperf3Client(host string, port, duration int) float64 {
 		return 0
 	}
 	return bps / 1e6
+}
+
+// ---- Probe targets poll & report ----
+
+type probeTarget struct {
+    ID   int64  `json:"id"`
+    Name string `json:"name"`
+    IP   string `json:"ip"`
+}
+
+func httpPostJSON(url string, body any) (int, []byte, error) {
+    b, _ := json.Marshal(body)
+    req, _ := http.NewRequest("POST", url, bytes.NewReader(b))
+    req.Header.Set("Content-Type", "application/json")
+    hc := &http.Client{Timeout: 6 * time.Second}
+    resp, err := hc.Do(req)
+    if err != nil { return 0, nil, err }
+    defer resp.Body.Close()
+    out, _ := io.ReadAll(resp.Body)
+    return resp.StatusCode, out, nil
+}
+
+func apiURL(scheme, addr, path string) string {
+    u := url.URL{Scheme: "http", Host: addr, Path: path}
+    if scheme == "wss" { u.Scheme = "https" }
+    return u.String()
+}
+
+func periodicProbe(addr, secret, scheme string) {
+    ticker := time.NewTicker(60 * time.Second)
+    defer ticker.Stop()
+    for {
+        doProbeOnce(addr, secret, scheme)
+        <-ticker.C
+    }
+}
+
+func doProbeOnce(addr, secret, scheme string) {
+    // fetch targets
+    url1 := apiURL(scheme, addr, "/api/v1/agent/probe-targets")
+    type resp struct{ Code int `json:"code"`; Data []probeTarget `json:"data"` }
+    code, body, err := httpPostJSON(url1, map[string]any{"secret": secret})
+    if err != nil || code != 200 { return }
+    var r resp
+    if json.Unmarshal(body, &r) != nil || r.Code != 0 || len(r.Data) == 0 { return }
+    // ping each
+    results := make([]map[string]any, 0, len(r.Data))
+    for _, t := range r.Data {
+        avg, loss := runICMP(t.IP, 1, 1000)
+        ok := 0
+        if loss < 100 && avg > 0 { ok = 1 }
+        results = append(results, map[string]any{"targetId": t.ID, "rttMs": avg, "ok": ok})
+    }
+    if len(results) == 0 { return }
+    url2 := apiURL(scheme, addr, "/api/v1/agent/report-probe")
+    _, _, _ = httpPostJSON(url2, map[string]any{"secret": secret, "results": results})
 }

@@ -5,7 +5,8 @@ FROM node:20-alpine AS fe
 WORKDIR /fe
 COPY vite-frontend/package*.json ./
 COPY vite-frontend/ .
-RUN npm ci --no-audit --no-fund && npm run build
+# Use npm install (with legacy peer deps) to avoid lock mismatch and peer resolution failures in CI
+RUN npm install --legacy-peer-deps --no-audit --no-fund && npm run build
 
 # --- Backend build ---
 FROM golang:1.25-alpine AS be

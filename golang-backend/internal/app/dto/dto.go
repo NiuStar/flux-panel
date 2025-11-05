@@ -48,6 +48,9 @@ type NodeDto struct {
     ServerIP string `json:"serverIp"`
     PortSta int    `json:"portSta"`
     PortEnd int    `json:"portEnd"`
+    PriceCents  *int64 `json:"priceCents"`
+    CycleDays   *int   `json:"cycleDays"`
+    StartDateMs *int64 `json:"startDateMs"`
 }
 
 type NodeUpdateDto struct {
@@ -57,6 +60,9 @@ type NodeUpdateDto struct {
     ServerIP string `json:"serverIp"`
     PortSta int    `json:"portSta"`
     PortEnd int    `json:"portEnd"`
+    PriceCents  *int64 `json:"priceCents"`
+    CycleDays   *int   `json:"cycleDays"`
+    StartDateMs *int64 `json:"startDateMs"`
 }
 
 // Tunnel

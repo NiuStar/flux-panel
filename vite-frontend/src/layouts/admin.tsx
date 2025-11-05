@@ -58,6 +58,26 @@ export default function AdminLayout({
       )
     },
     {
+      path: '/probe',
+      label: '探针目标',
+      icon: (
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M2 11a1 1 0 011-1h2.586l2-2H8a1 1 0 110-2h1.586l2-2H14a1 1 0 110 2h-.586l-2 2H12a1 1 0 110 2h-.586l-2 2H11a1 1 0 110 2H7a1 1 0 01-1-1v-.586l-2 2V17a1 1 0 11-2 0v-4z" />
+        </svg>
+      ),
+      adminOnly: true
+    },
+    {
+      path: '/network',
+      label: '网络',
+      icon: (
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M4 13l3-3 2 2 5-5 2 2v4H4z" />
+        </svg>
+      ),
+      adminOnly: true
+    },
+    {
       path: '/forward',
       label: '转发管理',
       icon: (

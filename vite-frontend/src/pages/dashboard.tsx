@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 
-import { getUserPackageInfo } from "@/api";
+import { getUserPackageInfo, getRecentAlerts } from "@/api";
 
 interface UserInfo {
   flow: number;
@@ -64,7 +64,7 @@ export default function DashboardPage() {
   const [forwardList, setForwardList] = useState<Forward[]>([]);
   const [statisticsFlows, setStatisticsFlows] = useState<StatisticsFlow[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
-  
+  const [alerts, setAlerts] = useState<any[]>([]);
   const [addressModalOpen, setAddressModalOpen] = useState(false);
   const [addressModalTitle, setAddressModalTitle] = useState('');
   const [addressList, setAddressList] = useState<AddressItem[]>([]);
@@ -172,6 +172,8 @@ export default function DashboardPage() {
     setIsAdmin(adminStatus === 'true');
     
     loadPackageData();
+    // 加载最近告警（管理员可见）
+    getRecentAlerts(20).then((res:any)=>{ if (res.code===0) setAlerts(res.data||[]); }).catch(()=>{});
     localStorage.setItem('e', '/dashboard');
   }, []);
 
@@ -606,8 +608,31 @@ export default function DashboardPage() {
                  </div>
                  <p className="text-base lg:text-xl font-bold text-foreground truncate">{formatFlow(userInfo.flow, 'gb')}</p>
                </div>
-             </CardBody>
-           </Card>
+           </CardBody>
+          </Card>
+
+          {/* 最近告警（管理员） */}
+          {isAdmin && (
+            <Card className="border border-gray-200 dark:border-default-200 shadow-md hover:shadow-lg transition-shadow col-span-2">
+              <CardBody className="p-3 lg:p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs lg:text-sm text-default-600 truncate">最近告警</p>
+                </div>
+                <div className="space-y-2 max-h-56 overflow-auto text-sm">
+                  {alerts.length===0 && <div className="text-default-500">暂无告警</div>}
+                  {alerts.map((a:any)=>(
+                    <div key={a.id} className="flex justify-between items-center p-2 rounded bg-default-50">
+                      <div className="truncate">
+                        <span className={`px-2 py-0.5 rounded text-xs mr-2 ${a.type==='offline'?'bg-danger-100 text-danger-700': a.type==='online'?'bg-success-100 text-success-700':'bg-warning-100 text-warning-700'}`}>{a.type}</span>
+                        {(a.nodeName||'')+ ' ' + (a.message||'')}
+                      </div>
+                      <div className="text-xs text-default-500 ml-2 whitespace-nowrap">{new Date(a.timeMs).toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+              </CardBody>
+            </Card>
+          )}
 
            <Card className="border border-gray-200 dark:border-default-200 shadow-md hover:shadow-lg transition-shadow">
              <CardBody className="p-3 lg:p-4">
