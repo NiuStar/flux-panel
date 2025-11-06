@@ -137,6 +137,7 @@
     - 未携带 `_chains` 时 Agent 会从 `forwarder.nodes[0].addr` 兜底合成最小链
 - 配置路径
     - 固定 `/etc/gost/gost.json`
+- 面板前端访问：```http://ip:port/app/```
 
 ---
 ## 免责声明
